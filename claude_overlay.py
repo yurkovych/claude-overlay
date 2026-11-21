@@ -967,6 +967,10 @@ class Overlay:
         self.root.attributes("-topmost", True)
         if WINDOW_ALPHA < 1.0:   # avoid WS_EX_LAYERED, which ignores SetWindowRgn rounding
             self.root.attributes("-alpha", WINDOW_ALPHA)
+        if "--hidden" in sys.argv[1:]:
+            # Start invisible so the startup paint doesn't flash; _start_hidden withdraws
+            # the window and only then restores the real opacity (1.0 drops WS_EX_LAYERED).
+            self.root.attributes("-alpha", 0.0)
         w, h = self.px(420), self.px(620)
         if IS_MAC:
             _mons = enumerate_monitors()                # primary first
@@ -8675,6 +8679,20 @@ class Overlay:
     def run(self):
         self.root.mainloop()
 
+    def _start_hidden(self):
+        """--hidden (e.g. a Startup-folder shortcut): launch straight into the hidden state
+        the hotkey leaves it in, so the first HOTKEY press shows it. Delayed by the caller
+        so the startup paint / taskbar-button dance has settled before we withdraw."""
+        try:
+            self.root.withdraw()
+            self.visible = False
+        except Exception:
+            pass
+        try:
+            self.root.attributes("-alpha", WINDOW_ALPHA)   # hidden now → safe to make opaque
+        except Exception:
+            pass
+
 
 def _write_interpreter_cache():
     """Record which interpreter is running the app, for the launcher's fast path.
@@ -8757,6 +8775,9 @@ if __name__ == "__main__":
         _remember_interpreter()    # __main__ only: a pytest import must never cache the
                                    # console python.exe it runs under as the app's launcher
         try:
-            Overlay().run()
+            _ov = Overlay()
+            if "--hidden" in sys.argv[1:]:
+                _ov.root.after(800, _ov._start_hidden)
+            _ov.run()
         except KeyboardInterrupt:
             sys.exit(0)
