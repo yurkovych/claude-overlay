@@ -224,6 +224,30 @@ def _tk_key_sequences(spec):
     return [f"<{prefix}{k}>" for k in keys]
 
 
+def _tk_key_by_code(spec):
+    """Windows: ("<Control-KeyPress>", 0x4E) for "ctrl+n" — the modifiers as a pattern plus the
+    key's virtual-key code. Keysym bindings like <Control-n> only fire on a Latin layout (on the
+    Ukrainian one the same key is Cyrillic_te), but the VK code is the physical key on every
+    layout. None for anything unparseable."""
+    parts = [p for p in (spec or "").strip().lower().split("+") if p]
+    if not parts:
+        return None
+    names = {"ctrl": "Control", "control": "Control", "alt": "Alt", "shift": "Shift"}
+    try:
+        mods = [names[p] for p in parts[:-1]]
+    except KeyError:
+        return None
+    key = parts[-1]
+    m = re.fullmatch(r"f([1-9]|1[0-2])", key)
+    if m:
+        vk = 0x6F + int(m.group(1))              # VK_F1 = 0x70
+    elif len(key) == 1 and key.isalnum():
+        vk = ord(key.upper())                    # VK codes for A-Z / 0-9 are their ASCII codes
+    else:
+        return None
+    return "<%sKeyPress>" % "".join(x + "-" for x in mods), vk
+
+
 def _load_state():
     """Best-effort read of the tiny persisted UI state (STATE_FILE). Any problem —
     missing, unreadable, not a dict, absurdly large — yields {} so startup can't break."""
@@ -2624,12 +2648,31 @@ class Overlay:
         # NEW_CHAT_KEY = new conversation (same as the Clear chip). On the entry with "break"
         # so a Text class binding on the same keys (Ctrl+N = cursor to next line) doesn't also
         # run; on the root for when focus sits in the transcript instead.
-        for _seq in _tk_key_sequences(NEW_CHAT_KEY):
+        _code = None if IS_MAC else _tk_key_by_code(NEW_CHAT_KEY)
+        if _code:
+            # By physical key, so it works on any keyboard layout (see _tk_key_by_code).
+            _pat, _vk = _code
+            def _new_chat_key(e, _vk=_vk):
+                if e.keycode != _vk:
+                    return None                  # some other key with the same modifiers
+                self.reset()
+                return "break"
             for _w in (self.entry, self.root):
                 try:
-                    _w.bind(_seq, lambda e: (self.reset(), "break")[1])
+                    _w.bind(_pat, _new_chat_key, add="+")
+                    # a keysym binding of the Text class (Ctrl+N = next line) is more specific
+                    # than the pattern above and would win on a Latin layout → shadow it too
+                    for _seq in _tk_key_sequences(NEW_CHAT_KEY):
+                        _w.bind(_seq, _new_chat_key)
                 except tk.TclError:
                     pass
+        else:
+            for _seq in _tk_key_sequences(NEW_CHAT_KEY):
+                for _w in (self.entry, self.root):
+                    try:
+                        _w.bind(_seq, lambda e: (self.reset(), "break")[1])
+                    except tk.TclError:
+                        pass
         self.entry.bind("<Control-v>", self._on_paste)
         self.entry.bind("<Control-V>", self._on_paste)
         self.entry.bind("<Shift-Insert>", self._on_paste)
