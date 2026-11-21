@@ -951,6 +951,13 @@ class Overlay:
     def px(self, v):
         return int(round(v * self.s))
 
+    def _font_copy(self, f):
+        """An independent copy of a shared font at its CURRENT configured size. Not
+        Font(font=f): that goes through Tk's `font actual`, which reports the size in whole
+        POINTS, so the copy came out a rounding step away from the original — user bubbles
+        and tables rendered visibly bigger or smaller than the text around them."""
+        return tkfont.Font(root=self.root, **f.configure())
+
     # ── construction ──
     def _build(self):
         if IS_MAC:
@@ -1017,19 +1024,22 @@ class Overlay:
             return f
         self.f_title = mk(self.serif if self.provider == "claude" else self.codex_title_fam,
                           16, weight="bold")
-        self.f_body  = mk(self.sans, 15)
+        # CHAT_FONT_SIZE scales every chat-text font from its built-in 15px body size; the
+        # scaled base is what _set_zoom multiplies, so Ctrl +/- zooms on top of it.
+        cs = CHAT_FONT_SIZE / 15.0
+        self.f_body  = mk(self.sans, 15 * cs)
         self.f_small = mk(self.sans, 12)
         self.f_chip  = mk(self.sans, 11, weight="bold")
         self.f_mono  = mk(self.mono, 12)
         self.f_send  = mk(self.sans, 17, weight="bold")
-        self.f_think = mk(self.sans, 13, slant="italic")   # streamed extended-thinking text
+        self.f_think = mk(self.sans, 13 * cs, slant="italic")   # streamed extended-thinking text
         # Markdown answer styling — registered with self._fonts so they live-zoom with the body.
-        self.f_bold  = mk(self.sans, 15, weight="bold")
-        self.f_ital  = mk(self.sans, 15, slant="italic")
-        self.f_code  = mk(self.mono, 13)
-        self.f_h1    = mk(self.sans, 19, weight="bold")
-        self.f_h2    = mk(self.sans, 17, weight="bold")
-        self.f_h3    = mk(self.sans, 15, weight="bold")
+        self.f_bold  = mk(self.sans, 15 * cs, weight="bold")
+        self.f_ital  = mk(self.sans, 15 * cs, slant="italic")
+        self.f_code  = mk(self.mono, 13 * cs)
+        self.f_h1    = mk(self.sans, 19 * cs, weight="bold")
+        self.f_h2    = mk(self.sans, 17 * cs, weight="bold")
+        self.f_h3    = mk(self.sans, 15 * cs, weight="bold")
         # Collapsed-orb name pill: a fixed-size label (NOT registered for zoom — it only shows
         # while collapsed, where the chat-text zoom is irrelevant). Kept as a ref so Tk won't GC it.
         self.f_pill  = tkfont.Font(family=self.sans, size=-self.px(13), weight="bold")
@@ -2578,7 +2588,11 @@ class Overlay:
         wrap = tk.Frame(self.root, bg=T["bg"])
         wrap.pack(fill="x", side="bottom")
         self.input_wrap = wrap
-        self.in_h = self.px(62)
+        # 62px holds two lines of the stock 15px text; a bigger CHAT_FONT_SIZE needs the extra
+        # line height for both lines (measured, so it's right for any font/DPI).
+        self.in_h = self.px(62) + max(0, 2 * (self.f_body.metrics("linespace")
+                                            - tkfont.Font(family=self.sans,
+                                                          size=-self.px(15)).metrics("linespace")))
         self._in_h_base, self._in_lines = self.in_h, 2   # INPUT_MAX_LINES grows from here
         # The line-up strip: queued messages render here, directly above the input box
         # (packed with before=self.canvas only while the queue is non-empty).
@@ -4444,8 +4458,8 @@ class Overlay:
             full = max(self.px(200), self.chat.winfo_width() - 2 * self.px(18))
             maxw = max(self.px(140), int(full * 0.74))
             padx, pady, rad = self.px(13), self.px(9), self.px(14)
-            body_font = tkfont.Font(root=self.root, font=self.f_body)   # current zoom
-            hint_font = tkfont.Font(root=self.root, font=self.f_small)
+            body_font = self._font_copy(self.f_body)   # current zoom
+            hint_font = self._font_copy(self.f_small)
             c._overlay_fonts = [body_font, hint_font]       # keep refs so Tk won't GC them
             tmp = c.create_text(0, 0, text=shown, font=body_font, width=maxw, anchor="nw")
             bb = c.bbox(tmp)
@@ -4895,8 +4909,8 @@ class Overlay:
         cv = tk.Canvas(self.chat, bg=T["bg"], highlightthickness=0, takefocus=0)
         def render():
             cv.delete("all")
-            cell_f = tkfont.Font(root=self.root, font=self.f_body)   # current zoom
-            head_f = tkfont.Font(root=self.root, font=self.f_chip)
+            cell_f = self._font_copy(self.f_body)   # current zoom
+            head_f = self._font_copy(self.f_chip)
             cv._overlay_fonts = [cell_f, head_f]
             padx, pady = self.px(9), self.px(5)
             avail = max(self.px(200), self.chat.winfo_width() - self.px(56))
@@ -5023,9 +5037,9 @@ class Overlay:
         c = tk.Canvas(self.chat, bg=T["bg"], highlightthickness=0)
         def render():
             c.delete("all")
-            fi = tkfont.Font(root=self.root, font=self.f_small)   # current zoom
-            fn = tkfont.Font(root=self.root, font=self.f_chip)
-            fa = tkfont.Font(root=self.root, font=self.f_small)
+            fi = self._font_copy(self.f_small)   # current zoom
+            fn = self._font_copy(self.f_chip)
+            fa = self._font_copy(self.f_small)
             c._overlay_fonts = [fi, fn, fa]                 # keep refs so Tk won't GC them
             padx, gap, h = self.px(11), self.px(7), self.px(26)
             iw, nw = fi.measure(icon), fn.measure(name)
@@ -5079,7 +5093,7 @@ class Overlay:
                 draw(idle, T["muted"] if hover else T["faint"], T["tool_bg"] if hover else None)
 
         def render():
-            f = tkfont.Font(root=self.root, font=self.f_small)   # current zoom
+            f = self._font_copy(self.f_small)   # current zoom
             c._overlay_fonts = [f]                               # keep a ref so Tk won't GC it
             pad = self.px(9)
             st.update(f=f, h=self.px(20), rad=self.px(6),
@@ -5221,7 +5235,7 @@ class Overlay:
                           font=st["f"], anchor="center")
 
         def render():
-            f = tkfont.Font(root=self.root, font=self.f_small)   # current zoom
+            f = self._font_copy(self.f_small)   # current zoom
             c._overlay_fonts = [f]                               # keep a ref so Tk won't GC it
             pad = self.px(11)
             widest = max(f.measure(v) for v in labels.values())  # widest state → no reflow
@@ -5336,7 +5350,7 @@ class Overlay:
         st = {}
 
         def render():
-            f = tkfont.Font(root=self.root, font=self.f_small)
+            f = self._font_copy(self.f_small)
             c._overlay_fonts = [f]
             st["w"], st["h"] = f.measure(text) + self.px(22), self.px(22)
             c.configure(width=st["w"], height=st["h"])
@@ -5386,8 +5400,8 @@ class Overlay:
 
         def render():
             c.delete("all")
-            f_t = tkfont.Font(root=self.root, font=self.f_small)
-            f_s = tkfont.Font(root=self.root, font=self.f_small)
+            f_t = self._font_copy(self.f_small)
+            f_s = self._font_copy(self.f_small)
             c._overlay_fonts = [f_t, f_s]
             full = max(self.px(220), self.chat.winfo_width() - 2 * self.px(34))
             pad, th, tw = self.px(9), self.px(38), self.px(60)
@@ -5542,7 +5556,7 @@ class Overlay:
                           font=st["f"], anchor="center")
 
         def render():
-            f = tkfont.Font(root=self.root, font=self.f_small)   # current zoom
+            f = self._font_copy(self.f_small)   # current zoom
             c._overlay_fonts = [f]                               # keep a ref so Tk won't GC it
             pad = self.px(11)
             widest = max(f.measure(v) for v in labels.values())  # widest state → no reflow
@@ -7688,7 +7702,7 @@ class Overlay:
                           font=st["f"], anchor="center")
 
         def render():
-            f = tkfont.Font(root=self.root, font=self.f_small)
+            f = self._font_copy(self.f_small)
             c._overlay_fonts = [f]
             pad = self.px(11)
             widest = max(f.measure(v) for v in labels.values())   # widest state → no reflow

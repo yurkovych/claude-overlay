@@ -297,6 +297,10 @@ SHOW_INTRO = True                # False = open to an empty chat: no "Hi — I f
 START_POSITION = "top-right"     # where the window opens at launch, on the primary monitor:
                                  # "top-right" (original) or "bottom-center" (centred, just
                                  # above the taskbar). Not remembered — every launch.
+CHAT_FONT_SIZE = 15              # conversation + input text size in px at 100% Windows
+                                 # scaling (like VS Code's editor.fontSize). Headings, code
+                                 # and thinking text scale with it; the interface doesn't.
+                                 # Ctrl +/- still zooms everything on top of this.
 INPUT_MAX_LINES = 2              # the input box grows with what you type, up to this many
                                  # lines, then scrolls. 2 = fixed two-line box (original).
 NEW_CHAT_KEY = ""                # in-window shortcut for a new conversation (same as the
@@ -853,6 +857,7 @@ _USER_CONFIG_KEYS = {
     "SHOW_INTRO": _v_bool,
     "NEW_CHAT_KEY": _v_local_key,
     "INPUT_MAX_LINES": _v_num(2, 20, int),
+    "CHAT_FONT_SIZE": _v_num(8, 40, int),
     "NO_LOCAL_TOOLS": _v_bool,
     "START_POSITION": _v_choice("top-right", "bottom-center"),
     "WINDOW_ALPHA": _v_num(0.3, 1.0, float),   # floor 0.3: an ~invisible window looks broken
