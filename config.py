@@ -286,6 +286,11 @@ if IS_MAC:
     # same chord would silently never reach the overlay there.
     HOTKEY = "alt+shift+space"   # ⌥⇧Space
 THEME = "light"                  # "light" (Claude paper) or "dark" (warm dark)
+SHOW_INTRO = True                # False = open to an empty chat: no "Hi — I float on top…"
+                                 # greeting and no one-time "ring on ✻" explainer
+START_POSITION = "top-right"     # where the window opens at launch, on the primary monitor:
+                                 # "top-right" (original) or "bottom-center" (centred, just
+                                 # above the taskbar). Not remembered — every launch.
 WINDOW_ALPHA = 1.0
 CORNER_RADIUS = 18
 TASKBAR_BUTTON = True            # show a real, clickable Windows taskbar button (with the
@@ -638,6 +643,8 @@ CODEX_EFFORT_LEVELS = [("Low", "low"), ("Medium", "medium"), ("High", "high"),
                        ("Extra high", "xhigh"), ("Max", "max"),
                        ("Default (your Codex setting)", "")]   # fallback when the model list
                                                                 # can't be read
+USER_INSTRUCTIONS = ""           # your own standing instructions, appended to the system
+                                 # prompt above (and Codex's) — e.g. language or style rules
 CODEX_SYSTEM_APPEND = SYSTEM_APPEND.replace(
     "never use a structured multiple-choice question tool",
     "never use a structured question or user-input tool")
@@ -779,6 +786,7 @@ _USER_CONFIG_KEYS = {
     # agent
     "WORKING_DIR": _v_dir,
     "MODEL": _v_str,
+    "USER_INSTRUCTIONS": _v_str,               # appended to the system prompt, both providers
     # "auto" is Claude Code's classifier-reviewed mode: a separate model vets each action
     # before it runs and blocks anything that escalates beyond the request or looks driven
     # by hostile content the agent read. That last part is why it belongs here — the
@@ -801,6 +809,7 @@ _USER_CONFIG_KEYS = {
     "CLI_AUTO_UPDATE": _v_bool,                # false = notice + button only, no auto-update
     "OVERLAY_AUTO_UPDATE": _v_bool,            # false = the overlay's own notice + button only
     "TELEMETRY": _v_bool,                      # false = never send the anonymous usage ping
+    "RESUME_OFFER": _v_bool,                   # false = never offer "Resume last conversation"
     "TELEMETRY_URL": _v_telemetry_url,         # "" = no endpoint; https only, see telemetry.state
     # Codex mode (the titlebar Claude ⇄ Codex switch)
     "PROVIDER": _v_choice("claude", "codex"),  # seeds the first launch; the switch remembers
@@ -820,6 +829,8 @@ _USER_CONFIG_KEYS = {
     "SHOW_IN_SCREEN_SHARE_DEFAULT": _v_bool,
     "TASKBAR_BUTTON": _v_bool,
     "HOTKEY": _v_str,
+    "SHOW_INTRO": _v_bool,
+    "START_POSITION": _v_choice("top-right", "bottom-center"),
     "WINDOW_ALPHA": _v_num(0.3, 1.0, float),   # floor 0.3: an ~invisible window looks broken
     "CORNER_RADIUS": _v_num(0, 40, int),
     "ORB_SIZE": _v_num(24, 160, int),
@@ -840,6 +851,7 @@ _ENV_BEATS_JSON = {
     "CLI_AUTO_UPDATE": "CLAUDE_OVERLAY_CLI_AUTO_UPDATE",
     "OVERLAY_AUTO_UPDATE": "CLAUDE_OVERLAY_AUTO_UPDATE",
     "TELEMETRY": "CLAUDE_OVERLAY_TELEMETRY",
+    "RESUME_OFFER": "CLAUDE_OVERLAY_RESUME_OFFER",
     "TELEMETRY_URL": "CLAUDE_OVERLAY_TELEMETRY_URL",
 }
 
@@ -909,6 +921,12 @@ def _apply_user_config():
 
 
 _apply_user_config()
+
+# Applied AFTER the overrides: USER_INSTRUCTIONS usually comes from config.json, and both
+# prompts must carry it (the Codex one was derived from SYSTEM_APPEND further up).
+if USER_INSTRUCTIONS.strip():
+    SYSTEM_APPEND += "\n\nThe user's own standing instructions:\n" + USER_INSTRUCTIONS.strip()
+    CODEX_SYSTEM_APPEND += "\n\nThe user's own standing instructions:\n" + USER_INSTRUCTIONS.strip()
 
 # A COPY, not the THEMES entry itself: the Claude ⇄ Codex switch rewrites T in place (every
 # module that did `from config import *` holds this same dict), and the source palettes

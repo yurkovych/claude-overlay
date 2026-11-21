@@ -946,13 +946,19 @@ class Overlay:
         w, h = self.px(420), self.px(620)
         if IS_MAC:
             _mons = enumerate_monitors()                # primary first
-            _l, wa_top, wa_right, _b = _mons[0]["work"] if _mons else (0, 0, 1440, 900)
+            wa_left, wa_top, wa_right, wa_bottom = (_mons[0]["work"] if _mons
+                                                    else (0, 0, 1440, 900))
         else:
             wa = wt.RECT()                              # primary monitor work area
             _user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(wa), 0)
-            wa_right, wa_top = wa.right, wa.top
-        x = max(self.px(10), wa_right - w - self.px(28))
-        y = wa_top + self.px(56)
+            wa_left, wa_top, wa_right, wa_bottom = wa.left, wa.top, wa.right, wa.bottom
+        if START_POSITION == "bottom-center":
+            # the work area already excludes the taskbar, so the gap sits right above it
+            x = wa_left + max(0, (wa_right - wa_left - w) // 2)
+            y = max(wa_top, wa_bottom - h - self.px(16))
+        else:
+            x = max(self.px(10), wa_right - w - self.px(28))
+            y = wa_top + self.px(56)
         self.root.geometry(f"{w}x{h}+{x}+{y}")
         if IS_MAC:
             # Order matters on Tk's macOS port: asked for before the window has a size,
@@ -7407,7 +7413,7 @@ class Overlay:
         A first-time reader has no way to guess that two arcs around a logo are a plan
         allowance — the shape can carry the numbers but not their meaning. One sentence, said
         once, is the only thing that closes that gap; after that the hover carries it."""
-        if self._ring_explained or not self._ring_arcs():
+        if not SHOW_INTRO or self._ring_explained or not self._ring_arcs():
             return
         self._ring_explained = True
         if self.provider == "codex":
@@ -8574,6 +8580,8 @@ class Overlay:
             pass
 
     def _intro(self):
+        if not SHOW_INTRO:
+            return        # empty chat; the first reply draws its own header (_ensure_header)
         self._ins(self._header_text(), "ah")
         hello = ("Codex here — floating on top of everything. Ask me anything and I'll look "
                  "at your screen to help.\n" if self.provider == "codex" else
