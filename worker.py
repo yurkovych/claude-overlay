@@ -446,6 +446,10 @@ class ClaudeWorker(threading.Thread):
         # by typing. Falls through to allow if the SDK lacks PermissionResultDeny (then
         # disallowed_tools is the sole line of defence — still enough to stop the call).
         if tool_name in DISALLOWED_TOOLS and PermissionResultDeny is not None:
+            if tool_name != "AskUserQuestion":     # NO_LOCAL_TOOLS: a local tool leaked back in
+                return PermissionResultDeny(
+                    message="This overlay has no access to the user's computer (files, "
+                            "shell). Answer from your knowledge or web search instead.")
             return PermissionResultDeny(
                 message="This overlay has no interactive question UI. Ask the user your "
                         "question inline as plain text and wait for their typed reply.")

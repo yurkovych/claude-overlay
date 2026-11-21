@@ -240,6 +240,12 @@ PERMISSION_MODE = "bypassPermissions"
 # Belt-and-suspenders: worker._allow_tool also DENIES it at run time, so even if it ever
 # leaks back in (a skill, a future CLI that ignores this list) the turn can't hang.
 DISALLOWED_TOOLS = ["AskUserQuestion"]
+NO_LOCAL_TOOLS = False           # True = "incognito" chat: no files, no shell, no subagents —
+                                 # the model answers from its knowledge and web search only.
+                                 # Adds LOCAL_TOOLS below to DISALLOWED_TOOLS (Claude side).
+LOCAL_TOOLS = ["Bash", "BashOutput", "KillShell", "KillBash", "PowerShell", "Monitor",
+               "Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "LS",
+               "NotebookRead", "NotebookEdit", "Task", "Agent", "Skill"]
 # Lean by default: do NOT inherit the user's ~/.claude MCP servers. The overlay is a
 # lightweight screen-chat that only needs the core Claude Code tools; inheriting every
 # MCP server the user has configured (Atlassian, Figma, M365, ...) injects their tool
@@ -844,6 +850,7 @@ _USER_CONFIG_KEYS = {
     "HOTKEY": _v_str,
     "SHOW_INTRO": _v_bool,
     "NEW_CHAT_KEY": _v_local_key,
+    "NO_LOCAL_TOOLS": _v_bool,
     "START_POSITION": _v_choice("top-right", "bottom-center"),
     "WINDOW_ALPHA": _v_num(0.3, 1.0, float),   # floor 0.3: an ~invisible window looks broken
     "CORNER_RADIUS": _v_num(0, 40, int),
@@ -938,6 +945,12 @@ _apply_user_config()
 
 # Applied AFTER the overrides: USER_INSTRUCTIONS usually comes from config.json, and both
 # prompts must carry it (the Codex one was derived from SYSTEM_APPEND further up).
+if NO_LOCAL_TOOLS:
+    DISALLOWED_TOOLS = DISALLOWED_TOOLS + [t for t in LOCAL_TOOLS if t not in DISALLOWED_TOOLS]
+    SYSTEM_APPEND += ("\n\nThis session has NO access to the user's computer: no files, no "
+                      "shell, no subagents. Ignore the automation notes above. Answer from your "
+                      "own knowledge, use web search/fetch when current facts matter, and work "
+                      "with screenshots or text the user pastes in.")
 if USER_INSTRUCTIONS.strip():
     SYSTEM_APPEND += "\n\nThe user's own standing instructions:\n" + USER_INSTRUCTIONS.strip()
     CODEX_SYSTEM_APPEND += "\n\nThe user's own standing instructions:\n" + USER_INSTRUCTIONS.strip()
