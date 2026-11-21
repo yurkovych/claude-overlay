@@ -2760,6 +2760,7 @@ class Overlay:
         self.busy_lbl = tk.Label(sl, text="", bg=T["bg"], fg=T["accent"],
                                  font=self.f_small, anchor="e")
         self.busy_lbl.pack(side="right", padx=(0, self.px(16)), pady=(0, self.px(6)))
+        sl.bind("<Configure>", self._fit_version, add="+")
 
     def _build_orb(self):
         s = self.px(ORB_SIZE)
@@ -4017,9 +4018,12 @@ class Overlay:
             (dict(x=0, y=0, relheight=1, width=B), "w", "size_we"),
             (dict(relx=1.0, x=-B, y=0, relheight=1, width=B), "e", "size_we"),
             (dict(x=0, y=0, width=C, height=C), "nw", "size_nw_se"),
-            (dict(relx=1.0, x=-C, y=0, width=C, height=C), "ne", "size_ne_sw"),
+            # "ne"/"se" are edge-sized, not C: the grips are opaque frames stacked above the
+            # content, and a C-sized box bit a square out of the ✕ hover highlight (ne) and
+            # the bottom-right corner (se — the ◢ grip in the status bar resizes there anyway).
+            (dict(relx=1.0, x=-B, y=0, width=B, height=B), "ne", "size_ne_sw"),
             (dict(x=0, rely=1.0, y=-C, width=C, height=C), "sw", "size_ne_sw"),
-            (dict(relx=1.0, x=-C, rely=1.0, y=-C, width=C, height=C), "se", "size_nw_se"),
+            (dict(relx=1.0, x=-B, rely=1.0, y=-B, width=B, height=B), "se", "size_nw_se"),
         ]
         self._edge_widgets = []
         for place_kw, dirs, cur in edges:
@@ -7192,8 +7196,23 @@ class Overlay:
         self.ctx_lbl.configure(text=f"·   {self._gauge_text()}", fg=self._ctx_color())
         q = self._quota_text()
         self.quota_lbl.configure(text=(f"·   {q}" if q else ""), fg=self._gauge_color())
-        self.ver_lbl.configure(text=f"·   {ver}", fg=T["muted"])
+        self._ver_text = f"·   {ver}"
+        self.ver_lbl.configure(text=self._ver_text, fg=T["muted"])
+        self.root.after_idle(self._fit_version)   # after the new texts have been laid out
         self._paint_quota_ring()
+
+    def _fit_version(self, e=None):
+        """Show the version only when it fits whole: a half-clipped "v1.2" at the window edge
+        reads as a rendering bug. Measured with the font (not reqwidth), so it comes back
+        when the window is widened again."""
+        text = getattr(self, "_ver_text", "")
+        try:
+            sl = self.statusline_frame
+            avail = sl.winfo_width() - self.busy_lbl.winfo_reqwidth() - self.px(16)
+            end = self.ver_lbl.winfo_x() + self.f_small.measure(text) + self.px(6)
+            self.ver_lbl.configure(text=text if end <= avail else "")
+        except Exception:
+            pass
 
     def _model_label(self):
         """The statusline's model name: Codex models by their display name (GPT-6-Astra)
