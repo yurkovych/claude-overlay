@@ -94,6 +94,24 @@ from modelresolve import resolve_model
 import authstate
 
 
+def _local_context():
+    """LOCAL_CONTEXT: one line with today's date, weekday and the UTC offset, appended to the
+    system prompt when a session starts. "" when the setting is off."""
+    if not LOCAL_CONTEXT:
+        return ""
+    try:
+        import datetime
+        now = datetime.datetime.now().astimezone()
+        off = now.strftime("%z")
+        off = "UTC%s:%s" % (off[:3], off[3:]) if off else "unknown"
+        return ("\n\nToday is %s, %d %s %d. The user's local time zone is %s "
+                "(local time when this conversation started: %s)."
+                % (now.strftime("%A"), now.day, now.strftime("%B"), now.year, off,
+                   now.strftime("%H:%M")))
+    except Exception:
+        return ""
+
+
 def _stat_reason(exc):
     """Why a file we were handed could not be measured or read, in words the person who
     picked it can act on.
@@ -476,6 +494,7 @@ class ClaudeWorker(threading.Thread):
         return PermissionResultAllow()
 
     def _make_options(self) -> ClaudeAgentOptions:
+        # (LOCAL_CONTEXT: built per session, so a new conversation always gets today's date)
         opts = dict(
             permission_mode=self._permission_mode, cwd=WORKING_DIR, model=self._resolved_model,
             can_use_tool=self._allow_tool,
@@ -484,7 +503,8 @@ class ClaudeWorker(threading.Thread):
             # status, auto-memory) out of the preset system prompt so the big static
             # prefix stays byte-stable → prompt-cache hits survive across turns.
             system_prompt={"type": "preset", "preset": "claude_code",
-                           "append": SYSTEM_APPEND, "exclude_dynamic_sections": True},
+                           "append": SYSTEM_APPEND + _local_context(),
+                           "exclude_dynamic_sections": True},
         )
         opts["max_buffer_size"] = MAX_BUFFER_SIZE
         # Always pipe the CLI's stderr — under pythonw an inherited stderr doesn't exist and

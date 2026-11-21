@@ -669,6 +669,9 @@ CODEX_EFFORT_LEVELS = [("Low", "low"), ("Medium", "medium"), ("High", "high"),
                        ("Extra high", "xhigh"), ("Max", "max"),
                        ("Default (your Codex setting)", "")]   # fallback when the model list
                                                                 # can't be read
+LOCAL_CONTEXT = False            # True = tell the model today's date, weekday and your time
+                                 # zone when each conversation starts (Claude Code's own date
+                                 # line is stripped from the prompt here, so it doesn't know)
 USER_INSTRUCTIONS = ""           # your own standing instructions, appended to the system
                                  # prompt above (and Codex's) — e.g. language or style rules
 CODEX_SYSTEM_APPEND = SYSTEM_APPEND.replace(
@@ -822,6 +825,7 @@ _USER_CONFIG_KEYS = {
     # agent
     "WORKING_DIR": _v_dir,
     "MODEL": _v_str,
+    "LOCAL_CONTEXT": _v_bool,
     "USER_INSTRUCTIONS": _v_str,               # appended to the system prompt, both providers
     # "auto" is Claude Code's classifier-reviewed mode: a separate model vets each action
     # before it runs and blocks anything that escalates beyond the request or looks driven

@@ -2689,6 +2689,40 @@ class Overlay:
         # Typing, pasting, sending (which empties the box) and the placeholder all modify the
         # text; <<Modified>> catches every one of them, keyboard or programmatic.
         self.entry.bind("<<Modified>>", self._on_entry_modified, add="+")
+        # A click-and-slight-drag in an EMPTY box selected the bare line end, which Tk paints
+        # as a grey bar across the box. Nothing to select → drop the selection.
+        for _ev in ("<B1-Motion>", "<B1-Leave>"):
+            self.entry.bind(_ev, self._block_empty_drag, add="+")
+        self.entry.bind("<ButtonRelease-1>", self._drop_empty_selection, add="+")
+
+    def _entry_is_empty(self):
+        try:
+            return self._ph_active or not self.entry.get("1.0", "end-1c").strip()
+        except Exception:
+            return False
+
+    def _block_empty_drag(self, e=None):
+        """Empty box: swallow the drag so Tk's Text class never starts a selection. "break"
+        on <B1-Leave> also stops its auto-scan, which re-selected every 50 ms (the blinking)
+        while the pointer was dragged outside the window."""
+        if self._entry_is_empty():
+            try:
+                self.entry.tag_remove("sel", "1.0", "end")
+            except Exception:
+                pass
+            return "break"
+        return None
+
+    def _drop_empty_selection(self, e=None):
+        # after_idle: this widget-level binding runs BEFORE the Text class binding that
+        # extends the selection on drag, so clearing here directly was undone at once.
+        def clear():
+            try:
+                if self._ph_active or not self.entry.get("1.0", "end-1c").strip():
+                    self.entry.tag_remove("sel", "1.0", "end")
+            except Exception:
+                pass
+        self.root.after_idle(clear)
 
     def _on_entry_modified(self, e=None):
         try:
