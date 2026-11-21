@@ -4173,6 +4173,13 @@ class Overlay:
         (worst for short messages, which hug the far right — hence 'sometimes'). Re-fit them to the
         new width, reusing the debounced re-render so a drag coalesces into one pass when it settles
         (no per-pixel re-render → stays off the v1.1.9 freeze path)."""
+        if e.height != getattr(self, "_last_chat_h", None):
+            self._last_chat_h = e.height
+            # The chat got shorter/taller (INPUT_MAX_LINES growing the input box, a window
+            # resize): the view keeps its TOP line, so the newest text would slip under the
+            # input box. While following, pin the end instead.
+            if self._follow:
+                self.root.after_idle(self._scroll_follow)
         w = e.width
         if w == getattr(self, "_last_chat_w", None):
             return                       # height-only Configure (or no change) → nothing to re-fit
@@ -4407,6 +4414,15 @@ class Overlay:
         self._follow = True              # you just sent something → follow the reply again
         self._unread = False
         self._drop_thinking()            # a label from a turn that never answered
+        # The previous reply's last line may end WITHOUT a newline (the Copy row used to supply
+        # it, and with COPY_BUTTON "hover"/"none" there is none) → the "\n" below would only
+        # end that line and the bubble would sit right under the text. Close the line first so
+        # the next "\n" is a real gap.
+        try:
+            if self.chat.compare("end-1c", ">", "1.0") and self.chat.get("end-2c") != "\n":
+                self.chat.insert("end", "\n", "a")
+        except Exception:
+            pass
         self.chat.insert("end", "\n", self._gap_tags())
         self.chat.window_create("end", window=self._user_bubble(text), pady=self.px(3))
         self.chat.insert("end", "\n")
