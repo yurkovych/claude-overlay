@@ -1040,6 +1040,9 @@ class Overlay:
         self.f_h1    = mk(self.sans, 19 * cs, weight="bold")
         self.f_h2    = mk(self.sans, 17 * cs, weight="bold")
         self.f_h3    = mk(self.sans, 15 * cs, weight="bold")
+        # PARAGRAPH_GAP: blank lines are drawn in this small font, so their height is a
+        # fraction of a text line and follows CHAT_FONT_SIZE / Ctrl +/- like everything else.
+        self.f_gap   = mk(self.sans, 15 * cs * PARAGRAPH_GAP)
         # Collapsed-orb name pill: a fixed-size label (NOT registered for zoom — it only shows
         # while collapsed, where the chat-text zoom is irrelevant). Kept as a ref so Tk won't GC it.
         self.f_pill  = tkfont.Font(family=self.sans, size=-self.px(13), weight="bold")
@@ -2425,6 +2428,7 @@ class Overlay:
         self.chat.tag_configure("md_h2", font=self.f_h2, spacing1=self.px(11), spacing3=self.px(4))
         self.chat.tag_configure("md_h3", font=self.f_h3, spacing1=self.px(9), spacing3=self.px(3))
         self.chat.tag_configure("md_bullet", lmargin1=self.px(20), lmargin2=self.px(36))
+        self.chat.tag_configure("md_gap", font=self.f_gap)   # PARAGRAPH_GAP blank lines
         self.chat.tag_configure("md_quote", font=self.f_ital, foreground=T["muted"],
                                 lmargin1=self.px(20), lmargin2=self.px(20))
         self.chat.tag_configure("md_codeblock", font=self.f_code, background=code_bg,
@@ -2569,7 +2573,7 @@ class Overlay:
         cv = getattr(self, "_jump", None)
         if cv is None:
             return
-        want = not self._follow and self._sb_last < 0.999
+        want = JUMP_BUTTON and not self._follow and self._sb_last < 0.999
         try:
             if want:
                 if not self._jump_shown or self._jump_unread_drawn != self._unread:
@@ -4374,6 +4378,25 @@ class Overlay:
         self._scroll_follow()
         self._prune_chat()
 
+    def _gap_tags(self, *tags):
+        """Tags for a spacing-only newline: + md_gap when PARAGRAPH_GAP shrinks blank lines."""
+        return tags + ("md_gap",) if PARAGRAPH_GAP < 1.0 else tags
+
+    def _drop_thinking(self):
+        """THINKING_LABEL "transient": remove the "✻ thinking" block (label + any streamed
+        thinking text) between its marks. Tool lines inserted after it are left alone."""
+        if THINKING_LABEL != "transient":
+            return
+        try:
+            names = self.chat.mark_names()
+            if "think_start" in names and "think_end" in names:
+                self.chat.delete("think_start", "think_end")
+            for m in ("think_start", "think_end"):
+                if m in names:
+                    self.chat.mark_unset(m)
+        except Exception:
+            pass
+
     def add_user(self, text):
         self._has_turns = True           # this conversation now belongs to its agent
         self._paint_provider_switch()
@@ -4383,9 +4406,12 @@ class Overlay:
         self._set_task_badge(False)      # a new task → clear any stale "done" badge on the orb
         self._follow = True              # you just sent something → follow the reply again
         self._unread = False
-        self.chat.insert("end", "\n")
+        self._drop_thinking()            # a label from a turn that never answered
+        self.chat.insert("end", "\n", self._gap_tags())
         self.chat.window_create("end", window=self._user_bubble(text), pady=self.px(3))
         self.chat.insert("end", "\n")
+        self.chat.mark_set("reply_start", "end-1c")   # COPY_BUTTON "hover": the reply's range
+        self.chat.mark_gravity("reply_start", "left")
         try:
             self.chat.tag_remove("current_ah", "1.0", "end")   # a new turn starts; old header
         except Exception:                                       # is no longer the "active" one
@@ -4613,7 +4639,10 @@ class Overlay:
             # insert) so _prune_chat can tell if a later trim removed the active header.
             self.chat.mark_set("ah_start", "end-1c")
             self.chat.mark_gravity("ah_start", "left")
-            self._ins(self._header_text(), "ah")
+            if REPLY_HEADER:
+                self._ins(self._header_text(), "ah")
+            else:                                # no label: just a gap under your message
+                self._ins("\n", *self._gap_tags("a"))
             try:
                 self.chat.tag_remove("current_ah", "1.0", "end")
                 self.chat.tag_add("current_ah", "ah_start", "end-1c")
@@ -4631,10 +4660,15 @@ class Overlay:
         self._md_finalize()              # seal any answer text before a (re-opened) thinking block
         self._ensure_header()
         if not self._thinking_active:
+            self._drop_thinking()        # an earlier block in this turn (tools came between)
+            self.chat.mark_set("think_start", "end-1c")
+            self.chat.mark_gravity("think_start", "left")
             self._ins("\n◌ thinking\n" if self.provider == "codex" else "\n✻ thinking\n",
                       "think_label")
             self._thinking_active = True
         self._ins(text, "think")
+        self.chat.mark_set("think_end", "end-1c")
+        self.chat.mark_gravity("think_end", "left")   # later inserts (tools, answer) stay outside
 
     def add_delta(self, text):
         if text is not None:
@@ -4642,7 +4676,10 @@ class Overlay:
                                          # snapshot exactly what Claude wrote (Markdown and all)
         self._ensure_header()
         if self._thinking_active:        # the visible answer is starting → close the thinking block
-            self._raw_ins("\n", "a")
+            if THINKING_LABEL == "transient":
+                self._drop_thinking()
+            else:
+                self._raw_ins("\n", "a")
             self._thinking_active = False
         self._md_feed(text)
 
@@ -4785,6 +4822,9 @@ class Overlay:
             return
         if re.match(r'^\s*([-*_])\1{2,}\s*$', line):      # horizontal rule
             self._raw_ins("─" * 16 + nl, "a", "md_quote")
+            return
+        if not line.strip():                             # blank line between paragraphs
+            self._raw_ins(nl, *self._gap_tags("a"))
             return
         self._md_render_inline(line, ("a",))             # plain paragraph line
         self._raw_ins(nl, "a")
@@ -5068,13 +5108,14 @@ class Overlay:
         return c
 
     # ── per-message "Copy" button (ChatGPT/Claude-style) ──────────────────────────────
-    def _copy_btn(self, text):
+    def _copy_btn(self, text, solid=False):
         """A small, always-visible ghost 'Copy' button rendered as an embedded canvas (same
         pattern as the tool chip / user bubble). Click copies `text` — a snapshot captured here,
         so an OLD message still copies the right thing after newer turns reset the live buffers —
         to the clipboard and flashes '✓ Copied' for ~1.2 s. Forwards the wheel so it can't swallow
         scrolling (the v1.4.1 embedded-widget trap)."""
-        text = "" if text is None else str(text)
+        if not callable(text):           # a callable = read at click time (the floating button)
+            text = "" if text is None else str(text)
         idle, done = "⧉ Copy", "✓ Copied"
         c = tk.Canvas(self.chat, bg=T["bg"], highlightthickness=0, cursor="hand2", takefocus=0)
         c._copied = False
@@ -5090,7 +5131,8 @@ class Overlay:
             if c._copied:
                 draw(done, T["accent"], T["tool_bg"])
             else:
-                draw(idle, T["muted"] if hover else T["faint"], T["tool_bg"] if hover else None)
+                draw(idle, T["muted"] if hover else T["faint"],
+                     T["tool_bg"] if (hover or solid) else None)
 
         def render():
             f = self._font_copy(self.f_small)   # current zoom
@@ -5111,7 +5153,7 @@ class Overlay:
         def on_click(_e):
             try:
                 self.root.clipboard_clear()
-                self.root.clipboard_append(text)
+                self.root.clipboard_append(text() if callable(text) else text)
             except Exception:
                 pass
             c._copied = True
@@ -5131,6 +5173,7 @@ class Overlay:
         # purpose (no flash, no focus steal) -- so a test that "clicks" this button
         # runs nothing and then asserts against whatever is on the machine's clipboard.
         c._on_click = on_click
+        c._render = render                        # the floating button re-renders on each show
         c.bind("<MouseWheel>", self._fwd_wheel)   # embedded widget must not swallow the scroll
         self._register_zoomable(c, render)
         return c
@@ -5154,7 +5197,87 @@ class Overlay:
         if self._turn_copy_added or not (self._turn_raw or "").strip():
             return
         self._turn_copy_added = True
-        self._add_copy(self._turn_raw)
+        if COPY_BUTTON == "none":
+            return                       # select + Ctrl+C still works
+        if COPY_BUTTON == "hover":
+            self._tag_reply_for_hover(self._turn_raw)
+        else:
+            self._add_copy(self._turn_raw)
+
+    # ── COPY_BUTTON "hover": one floating Copy over whichever reply the pointer is on ──
+    def _tag_reply_for_hover(self, raw):
+        try:
+            if "reply_start" not in self.chat.mark_names():
+                return
+            self._reply_n = getattr(self, "_reply_n", 0) + 1
+            tag = "reply%d" % self._reply_n
+            self.chat.tag_add(tag, "reply_start", "end-1c")
+            self.chat.tag_lower(tag)             # no look of its own; never outrank styling
+            if not hasattr(self, "_reply_texts"):
+                self._reply_texts = {}
+                self.chat.bind("<Motion>", self._hover_copy_motion, add="+")
+                self.chat.bind("<Leave>", lambda e: self._hover_copy_hide_soon(), add="+")
+                self.chat.bind("<MouseWheel>", lambda e: self._hover_copy_hide(), add="+")
+            self._reply_texts[tag] = raw
+        except Exception:
+            pass
+
+    def _hover_copy_motion(self, e):
+        try:
+            idx = self.chat.index("@%d,%d" % (e.x, e.y))
+            tags = [t for t in self.chat.tag_names(idx) if t in self._reply_texts]
+        except Exception:
+            tags = []
+        if tags:
+            self._hover_copy_show(tags[-1])
+        else:
+            self._hover_copy_hide_soon()
+
+    def _hover_copy_show(self, tag):
+        self._hover_copy_cancel()
+        btn = getattr(self, "_hover_btn", None)
+        if btn is None or not self._widget_alive(btn):
+            btn = self._copy_btn(lambda: self._reply_texts.get(self._hover_tag, ""), solid=True)
+            btn.bind("<Enter>", lambda e: self._hover_copy_cancel(), add="+")
+            btn.bind("<Leave>", lambda e: self._hover_copy_hide_soon(), add="+")
+            self._hover_btn, self._hover_tag = btn, None
+        if self._hover_tag == tag and btn.winfo_ismapped():
+            return
+        self._hover_tag = tag
+        try:
+            btn._render()                        # current zoom
+            bw, bh = int(btn.cget("width")), int(btn.cget("height"))
+            cw, ch = self.chat.winfo_width(), self.chat.winfo_height()
+            info = self.chat.dlineinfo("%s.last - 1c" % tag)   # the reply's last display line
+            y = info[1] + info[3] + self.px(2) if info else ch - bh - self.px(6)
+            y = max(0, min(y, ch - bh - self.px(4)))
+            btn.place(x=cw - bw - self.px(10), y=y)
+            btn.lift()
+        except Exception:
+            pass
+
+    def _hover_copy_cancel(self):
+        aid = getattr(self, "_hover_hide_after", None)
+        if aid:
+            try:
+                self.root.after_cancel(aid)
+            except Exception:
+                pass
+        self._hover_hide_after = None
+
+    def _hover_copy_hide_soon(self):
+        if getattr(self, "_hover_hide_after", None) is None:
+            self._hover_hide_after = self.root.after(300, self._hover_copy_hide)
+
+    def _hover_copy_hide(self):
+        self._hover_hide_after = None
+        btn = getattr(self, "_hover_btn", None)
+        if btn is not None:
+            try:
+                btn.place_forget()
+            except Exception:
+                pass
+        self._hover_tag = None
 
     def add_sys(self, text):
         self._md_finalize()
@@ -7025,6 +7148,9 @@ class Overlay:
         self._zoomables = []             # all embedded canvases were just destroyed with the text
         self._turn_raw = ""              # drop the assistant-answer buffer + its Copy-button guard
         self._turn_copy_added = False
+        if hasattr(self, "_reply_texts"):
+            self._reply_texts.clear()    # COPY_BUTTON "hover": the tagged replies are gone
+            self._hover_copy_hide()
         self._set_task_badge(False)      # fresh conversation → drop any "task done" badge
         self._claude_header = False
         self._thinking_active = False    # don't carry a half-open thinking block into the new turn
@@ -8372,6 +8498,9 @@ class Overlay:
             self._retire_approval(payload, "— answered by Codex's reviewer")
         elif kind == "turn_done":
             self._md_finalize()          # the turn ended → give the last line full block styling
+            if self._thinking_active and THINKING_LABEL == "transient":   # no answer after it
+                self._drop_thinking()
+                self._thinking_active = False
             self._finish_turn_copy()     # then a Copy button under the reply
             self._ctx_sample_due = True  # arm one burn-rate sample for the usage refresh coming
             self._set_busy(False)
