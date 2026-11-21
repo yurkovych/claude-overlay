@@ -2579,6 +2579,7 @@ class Overlay:
         wrap.pack(fill="x", side="bottom")
         self.input_wrap = wrap
         self.in_h = self.px(62)
+        self._in_h_base, self._in_lines = self.in_h, 2   # INPUT_MAX_LINES grows from here
         # The line-up strip: queued messages render here, directly above the input box
         # (packed with before=self.canvas only while the queue is non-empty).
         self.queue_frame = tk.Frame(wrap, bg=T["bg"])
@@ -2624,6 +2625,39 @@ class Overlay:
         self._ph_active = False
         self._ph_in()
         self.canvas.bind("<Configure>", self._layout_input)
+        # Typing, pasting, sending (which empties the box) and the placeholder all modify the
+        # text; <<Modified>> catches every one of them, keyboard or programmatic.
+        self.entry.bind("<<Modified>>", self._on_entry_modified, add="+")
+
+    def _on_entry_modified(self, e=None):
+        try:
+            self.entry.edit_modified(False)   # re-arm: <<Modified>> fires only on 0 → 1
+        except Exception:
+            pass
+        self.root.after_idle(self._autosize_input)
+
+    def _autosize_input(self):
+        """Grow/shrink the input box to fit its wrapped text, between 2 and INPUT_MAX_LINES
+        lines (past the cap the Text scrolls, as it always did)."""
+        if INPUT_MAX_LINES <= 2 and self._in_lines == 2:
+            return
+        try:
+            n = self.entry.count("1.0", "end-1c", "displaylines")
+            n = (n[0] if isinstance(n, tuple) else n) or 0
+            ls = self.f_body.metrics("linespace")
+        except Exception:
+            return
+        lines = max(2, min(INPUT_MAX_LINES, n + 1))
+        if lines == self._in_lines:
+            return
+        self._in_lines = lines
+        self.in_h = self._in_h_base + (lines - 2) * ls
+        try:
+            self.canvas.configure(height=self.in_h)
+            self._layout_input()
+            self.entry.see("insert")
+        except Exception:
+            pass
 
     def _build_statusbar(self):
         st = tk.Frame(self.root, bg=T["bg"])
@@ -3471,6 +3505,8 @@ class Overlay:
         c.tag_bind("send", "<Button-1>", lambda ev: self._send_or_stop())
         c.tag_bind("send", "<Enter>", lambda ev: self._on_send_hover(True))
         c.tag_bind("send", "<Leave>", lambda ev: self._on_send_hover(False))
+        if INPUT_MAX_LINES > 2:
+            self.root.after_idle(self._autosize_input)   # width/zoom may have re-wrapped
 
     def _send_state(self):
         return ("busy" if self.busy else "idle") + ("_hover" if self._send_hover else "")
