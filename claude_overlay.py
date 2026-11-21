@@ -2720,7 +2720,7 @@ class Overlay:
         self._paint_modes()
         self.grip = tk.Label(st, text="◢", bg=T["bg"], fg=T["faint"], font=self.f_small,
                              cursor=_cursor("size_nw_se"))
-        self.grip.pack(side="right", padx=(0, self.px(8)), pady=pad)
+        self.grip.pack(side="right", padx=(0, self.px(16)), pady=pad)   # flush with the input box
         self.grip.bind("<ButtonPress-1>", self._resize_start)
         self.grip.bind("<B1-Motion>", self._resize_move)
 
@@ -7187,6 +7187,7 @@ class Overlay:
         self._refresh_send()
         self._paint_provider_switch()
         self.busy_lbl.configure(text="thinking…" if busy else "")
+        self.root.after_idle(self._fit_version)   # "thinking…" shares the row with the version
 
     def _refresh_statusline(self):
         # version goes last so it clips first if the window is narrow; ⬆ flags an update
@@ -7207,10 +7208,18 @@ class Overlay:
         when the window is widened again."""
         text = getattr(self, "_ver_text", "")
         try:
-            sl = self.statusline_frame
-            avail = sl.winfo_width() - self.busy_lbl.winfo_reqwidth() - self.px(16)
-            end = self.ver_lbl.winfo_x() + self.f_small.measure(text) + self.px(6)
-            self.ver_lbl.configure(text=text if end <= avail else "")
+            # Computed from the TEXTS (font.measure), not from widget positions: positions lag
+            # a text change by a layout pass, which let a late "week 49%" push the version off
+            # the edge until the next resize. Paddings mirror _build_statusline's pack calls;
+            # +4 per label covers Tk's own label padding.
+            m = lambda w: self.f_small.measure(w.cget("text")) + 4
+            used = (self.px(16) + m(self.statusline)
+                    + 3 * self.px(9) + m(self.effort_lbl) + m(self.ctx_lbl) + m(self.quota_lbl)
+                    + self.px(9) + self.f_small.measure(text) + 4)
+            busy = self.busy_lbl.cget("text")
+            avail = (self.statusline_frame.winfo_width() - self.px(16)
+                     - (self.f_small.measure(busy) + 4 if busy else 0))
+            self.ver_lbl.configure(text=text if used <= avail else "")
         except Exception:
             pass
 
