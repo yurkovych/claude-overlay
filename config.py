@@ -291,6 +291,9 @@ SHOW_INTRO = True                # False = open to an empty chat: no "Hi — I f
 START_POSITION = "top-right"     # where the window opens at launch, on the primary monitor:
                                  # "top-right" (original) or "bottom-center" (centred, just
                                  # above the taskbar). Not remembered — every launch.
+NEW_CHAT_KEY = ""                # in-window shortcut for a new conversation (same as the
+                                 # Clear chip), e.g. "ctrl+n". Modifiers ctrl/alt/shift + one
+                                 # letter, digit or f1-f12. "" = no shortcut (original).
 WINDOW_ALPHA = 1.0
 CORNER_RADIUS = 18
 TASKBAR_BUTTON = True            # show a real, clickable Windows taskbar button (with the
@@ -711,6 +714,16 @@ def _v_bool(v):
     return v if isinstance(v, bool) else _BAD   # JSON true/false only — "true" is a typo
 
 
+def _v_local_key(v):
+    """A window-local shortcut: "" (off) or [ctrl+|alt+|shift+]… + a letter, digit or F1-F12."""
+    if v == "":
+        return v
+    if isinstance(v, str) and re.fullmatch(
+            r"((ctrl|control|alt|shift)\+)*([a-z0-9]|f([1-9]|1[0-2]))", v.strip().lower()):
+        return v.strip().lower()
+    return _BAD
+
+
 def _v_str(v):
     return v if isinstance(v, str) and v.strip() else _BAD
 
@@ -830,6 +843,7 @@ _USER_CONFIG_KEYS = {
     "TASKBAR_BUTTON": _v_bool,
     "HOTKEY": _v_str,
     "SHOW_INTRO": _v_bool,
+    "NEW_CHAT_KEY": _v_local_key,
     "START_POSITION": _v_choice("top-right", "bottom-center"),
     "WINDOW_ALPHA": _v_num(0.3, 1.0, float),   # floor 0.3: an ~invisible window looks broken
     "CORNER_RADIUS": _v_num(0, 40, int),

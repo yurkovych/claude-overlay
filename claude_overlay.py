@@ -200,6 +200,30 @@ def _ensure_shot_dir():
         SHOT_DIR = Path(tempfile.gettempdir())
 
 
+def _tk_key_sequences(spec):
+    """"ctrl+n" → ["<Control-n>", "<Control-N>"] (both cases, so Caps Lock doesn't break it).
+    The format is config._v_local_key's; "" or anything unparseable → [] (no binding)."""
+    parts = [p for p in (spec or "").strip().lower().split("+") if p]
+    if not parts:
+        return []
+    names = {"ctrl": "Control", "control": "Control", "alt": "Alt", "shift": "Shift"}
+    try:
+        mods = [names[p] for p in parts[:-1]]
+    except KeyError:
+        return []
+    key = parts[-1]
+    if re.fullmatch(r"f([1-9]|1[0-2])", key):
+        keys = [key.upper()]
+    elif len(key) == 1 and key.isalpha():
+        keys = [key.upper()] if "Shift" in mods else [key, key.upper()]
+    elif len(key) == 1 and key.isdigit():
+        keys = [key]
+    else:
+        return []
+    prefix = "".join(m + "-" for m in mods)
+    return [f"<{prefix}{k}>" for k in keys]
+
+
 def _load_state():
     """Best-effort read of the tiny persisted UI state (STATE_FILE). Any problem —
     missing, unreadable, not a dict, absurdly large — yields {} so startup can't break."""
@@ -2574,6 +2598,15 @@ class Overlay:
         self.entry.bind("<Return>", self._on_return)
         self.entry.bind("<KP_Enter>", self._on_return)
         self.entry.bind("<Escape>", self._on_escape)
+        # NEW_CHAT_KEY = new conversation (same as the Clear chip). On the entry with "break"
+        # so a Text class binding on the same keys (Ctrl+N = cursor to next line) doesn't also
+        # run; on the root for when focus sits in the transcript instead.
+        for _seq in _tk_key_sequences(NEW_CHAT_KEY):
+            for _w in (self.entry, self.root):
+                try:
+                    _w.bind(_seq, lambda e: (self.reset(), "break")[1])
+                except tk.TclError:
+                    pass
         self.entry.bind("<Control-v>", self._on_paste)
         self.entry.bind("<Control-V>", self._on_paste)
         self.entry.bind("<Shift-Insert>", self._on_paste)
