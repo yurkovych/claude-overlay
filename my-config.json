@@ -1,0 +1,23 @@
+{
+  "THEME": "dark",
+  "MODEL": "sonnet",
+  "TASKBAR_BUTTON": false,
+  "AUTO_SCREENSHOT_DEFAULT": false,
+  "SHOW_IN_SCREEN_SHARE_DEFAULT": true,
+  "HOTKEY": "windows+c",
+  "START_POSITION": "bottom-center",
+  "SHOW_INTRO": false,
+  "RESUME_OFFER": false,
+  "NEW_CHAT_KEY": "ctrl+n",
+  "NO_LOCAL_TOOLS": true,
+  "INPUT_MAX_LINES": 8,
+  "CHAT_FONT_SIZE": 14,
+  "REPLY_HEADER": false,
+  "THINKING_LABEL": "transient",
+  "PARAGRAPH_GAP": 0.5,
+  "COPY_BUTTON": "none",
+  "JUMP_BUTTON": false,
+  "SKILLS": null,
+  "LOCAL_CONTEXT": true,
+  "USER_INSTRUCTIONS": "I'm Oleksiy, based in Kyiv, Ukraine. Reply in the language I write in: English or Ukrainian, never Russian. In Ukrainian address me with 'ти'.\n\nDictionary mode: when my message starts with \"t:\" or \"translate:\", the rest is a single word, phrase or slang term (often from games), in English or Ukrainian. Reply ONLY with the entry - no preamble, no follow-up questions:\n**word** (part of speech)\nEN: one-sentence plain definition\nUA: Ukrainian translation or closest equivalent\nExample: a short natural sentence using it\nIf the word is Ukrainian, put the English equivalent on the EN line and keep the example in English. For gaming slang, internet slang or idioms, skip the part of speech and explain what it means and where it's used in 2-3 lines. Give the most likely meaning first; add a second only if genuinely ambiguous. Keep it as short as possible while clear."
+}
