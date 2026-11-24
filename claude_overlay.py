@@ -2410,6 +2410,8 @@ class Overlay:
         self.chat.configure(yscrollcommand=self._sb_set)
         self.chat.bind("<MouseWheel>", self._on_wheel)
         self.chat.bind("<Key>", self._readonly_keys)
+        if not IS_MAC:   # layout-independent Ctrl+A / Ctrl+C (see _entry_layout_keys)
+            self.chat.bind("<Control-KeyPress>", self._chat_layout_keys, add="+")
         # Starting a selection in the transcript drops any user-bubble highlight, so the window
         # never shows two selections at once. add="+" so Text's own click bindings still run.
         self.chat.bind("<Button-1>", lambda e: self._bubble_sel_clear(), add="+")
@@ -2640,7 +2642,8 @@ class Overlay:
         wrap.bind("<Configure>", self._refresh_attach, add="+")
         self.entry = tk.Text(self.canvas, bg=T["field"], fg=T["text"], bd=0, height=2,
                              wrap="word", font=self.f_body, insertbackground=T["accent"],
-                             highlightthickness=0, padx=0, pady=0)
+                             highlightthickness=0, padx=0, pady=0,
+                             undo=True, autoseparators=True, maxundo=-1)   # Ctrl+Z / Ctrl+Y
         self.entry_win = self.canvas.create_window(0, 0, window=self.entry, anchor="nw")
         self.entry.bind("<Return>", self._on_return)
         self.entry.bind("<KP_Enter>", self._on_return)
@@ -2674,6 +2677,12 @@ class Overlay:
                     except tk.TclError:
                         pass
         self.entry.bind("<Control-v>", self._on_paste)
+        if not IS_MAC:
+            # Tk matches Ctrl shortcuts by the typed LETTER, so on the Ukrainian layout Ctrl+C
+            # is Ctrl+с and nothing fires. Catch them by physical key (VK code) instead — only
+            # when the letter didn't match, so the Latin layout keeps the stock bindings.
+            self.entry.bind("<Control-KeyPress>", self._entry_layout_keys, add="+")
+            # (the chat's twin is bound in _build_chat — the chat doesn't exist yet here)
         self.entry.bind("<Control-V>", self._on_paste)
         self.entry.bind("<Shift-Insert>", self._on_paste)
         if IS_MAC:
@@ -2689,40 +2698,6 @@ class Overlay:
         # Typing, pasting, sending (which empties the box) and the placeholder all modify the
         # text; <<Modified>> catches every one of them, keyboard or programmatic.
         self.entry.bind("<<Modified>>", self._on_entry_modified, add="+")
-        # A click-and-slight-drag in an EMPTY box selected the bare line end, which Tk paints
-        # as a grey bar across the box. Nothing to select → drop the selection.
-        for _ev in ("<B1-Motion>", "<B1-Leave>"):
-            self.entry.bind(_ev, self._block_empty_drag, add="+")
-        self.entry.bind("<ButtonRelease-1>", self._drop_empty_selection, add="+")
-
-    def _entry_is_empty(self):
-        try:
-            return self._ph_active or not self.entry.get("1.0", "end-1c").strip()
-        except Exception:
-            return False
-
-    def _block_empty_drag(self, e=None):
-        """Empty box: swallow the drag so Tk's Text class never starts a selection. "break"
-        on <B1-Leave> also stops its auto-scan, which re-selected every 50 ms (the blinking)
-        while the pointer was dragged outside the window."""
-        if self._entry_is_empty():
-            try:
-                self.entry.tag_remove("sel", "1.0", "end")
-            except Exception:
-                pass
-            return "break"
-        return None
-
-    def _drop_empty_selection(self, e=None):
-        # after_idle: this widget-level binding runs BEFORE the Text class binding that
-        # extends the selection on drag, so clearing here directly was undone at once.
-        def clear():
-            try:
-                if self._ph_active or not self.entry.get("1.0", "end-1c").strip():
-                    self.entry.tag_remove("sel", "1.0", "end")
-            except Exception:
-                pass
-        self.root.after_idle(clear)
 
     def _on_entry_modified(self, e=None):
         try:
@@ -3609,6 +3584,10 @@ class Overlay:
 
     def _on_send_hover(self, hovering):
         self._send_hover = hovering
+        try:
+            self.canvas.configure(cursor="hand2" if hovering else "")   # it's a button
+        except Exception:
+            pass
         self._paint_send()
 
     def _paint_send(self):
@@ -3670,12 +3649,14 @@ class Overlay:
             self.entry.insert("1.0", self._placeholder())
             self.entry.configure(fg=T["faint"])
             self._ph_active = True
+            self.entry.edit_reset()      # Ctrl+Z must never bring the placeholder text back
 
     def _ph_out(self, e=None):
         if self._ph_active:
             self.entry.delete("1.0", "end")
             self.entry.configure(fg=T["text"])
             self._ph_active = False
+            self.entry.edit_reset()
 
     def _entry_text(self):
         return "" if self._ph_active else self.entry.get("1.0", "end").strip()
@@ -4417,6 +4398,47 @@ class Overlay:
             self._set_task_badge(True)
 
     # ── chat rendering (main thread only) ──
+    _VK_A, _VK_C, _VK_V, _VK_X, _VK_Y, _VK_Z = 65, 67, 86, 88, 89, 90
+
+    @staticmethod
+    def _non_latin_ctrl(e, vk):
+        """This is Ctrl+<vk key> typed on a non-Latin layout (letter ≠ the key's Latin letter),
+        and not AltGr (Ctrl+Alt), which types characters on some layouts."""
+        if e.keycode != vk or (e.state & 0x20000):   # 0x20000 = Alt (AltGr = Ctrl+Alt)
+            return False                              # (0x8 is NumLock on Windows – ignore)
+        return (e.keysym or "").lower() != chr(vk).lower()
+
+    def _entry_layout_keys(self, e):
+        w = self.entry
+        if self._non_latin_ctrl(e, self._VK_A):
+            w.tag_add("sel", "1.0", "end-1c")
+            w.mark_set("insert", "end-1c")
+        elif self._non_latin_ctrl(e, self._VK_C):
+            w.event_generate("<<Copy>>")
+        elif self._non_latin_ctrl(e, self._VK_X):
+            w.event_generate("<<Cut>>")
+        elif self._non_latin_ctrl(e, self._VK_V):
+            if self._on_paste(e) != "break":     # image → attached; text → normal paste
+                w.event_generate("<<Paste>>")
+        elif self._non_latin_ctrl(e, self._VK_Z):
+            w.event_generate("<<Undo>>")
+        elif self._non_latin_ctrl(e, self._VK_Y):
+            w.event_generate("<<Redo>>")
+        else:
+            return None
+        return "break"
+
+    def _chat_layout_keys(self, e):
+        # This binding is more specific than the chat's <Key> one, so it must also do that
+        # one's job: the transcript stays read-only for every other Ctrl combination.
+        if self._non_latin_ctrl(e, self._VK_A):
+            self.chat.tag_add("sel", "1.0", "end-1c")
+            return "break"
+        if self._non_latin_ctrl(e, self._VK_C):
+            self.chat.event_generate("<<Copy>>")
+            return "break"
+        return self._readonly_keys(e)
+
     def _readonly_keys(self, e):
         if (e.state & 0x4) and e.keysym.lower() in ("c", "a"):
             return
@@ -6492,6 +6514,7 @@ class Overlay:
         self._attach_names = {}
         self._refresh_attach()
         self.entry.delete("1.0", "end")
+        self.entry.edit_reset()          # a sent message is gone — Ctrl+Z starts fresh
         self._ph_active = False
         self._cancel_retry()               # sending (or queueing) by hand IS the retry —
                                            # whether this is the armed message or a different

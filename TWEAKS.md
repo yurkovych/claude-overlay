@@ -41,12 +41,21 @@ Launch flag: **`--hidden`** starts the app invisible and hidden, for the Startup
 
 ## Fixes (always on)
 
+Input-box selection is stock Tk on purpose (a selected line break paints to the right edge);
+earlier workarounds for that were removed as more trouble than they were worth.
+
 - Fonts are copied at their exact pixel size – user bubbles and tables match the chat text
 - Right-hand corner resize grips shrunk so they don't bite into the ✕ button / corner
 - Version label hides whole instead of clipping; ◢ grip aligned with the input box
 - A gap before your next message even without a Copy row under the reply
 - The chat stays pinned to the newest text when the input box grows or the window resizes
-- No selection / auto-scroll blinking when dragging in an empty input box
+- Ctrl+A / C / V / X / Z / Y work on any keyboard layout (Windows; matched by physical key)
+- Undo / redo (Ctrl+Z / Ctrl+Y) in the input box – Tk has it off by default
+- Hand cursor over the send button
+
+Known quirk (stock): after Task Manager / UAC / the Start menu had focus, the global hotkey
+can stop responding (the key hook misses key releases). Press Ctrl+Shift+Win+C once to reset it.
+Win+C is reserved by Windows, so a proper system hotkey can't be registered for it.
 
 ## Startup shortcut (Windows)
 
